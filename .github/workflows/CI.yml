@@ -15,19 +15,24 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  quality:
+  changes:
+    name: Plan affected CI jobs
     runs-on: ubuntu-latest
+    outputs:
+      base: ${{ steps.comparison.outputs.base }}
+      head: ${{ steps.comparison.outputs.head }}
+      quality: ${{ steps.plan.outputs.quality }}
+      format: ${{ steps.plan.outputs.format }}
+      fixtures: ${{ steps.plan.outputs.fixtures }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
           package-manager-cache: false
-      - run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Resolve affected comparison
         id: comparison
         env:
@@ -62,28 +67,58 @@ jobs:
           echo "head=$head" >> "$GITHUB_OUTPUT"
           echo "Validation revision: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
           echo "Comparison: $base..$head" >> "$GITHUB_STEP_SUMMARY"
-      - name: Check formatting
+      - name: Select affected validation
+        id: plan
         env:
-          TURBO_SCM_BASE: ${{ steps.comparison.outputs.base }}
-          TURBO_SCM_HEAD: ${{ steps.comparison.outputs.head }}
+          CI_BASE: ${{ steps.comparison.outputs.base }}
+          CI_HEAD: ${{ steps.comparison.outputs.head }}
+        run: node scripts/ci/plan.mjs
+  quality:
+    needs: changes
+    if: needs.changes.outputs.quality == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Check formatting
+        if: needs.changes.outputs.format == 'true'
+        env:
+          TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
+          TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
         run: pnpm format:check
       - name: Test formatting and hooks
+        if: needs.changes.outputs.fixtures == 'true'
         run: pnpm test
       - name: Record validation result
         if: always()
         env:
           RESULT: ${{ job.status }}
+          FORMAT_PLANNED: ${{ needs.changes.outputs.format }}
+          FIXTURES_PLANNED: ${{ needs.changes.outputs.fixtures }}
+          COMPARISON_BASE: ${{ needs.changes.outputs.base }}
+          COMPARISON_HEAD: ${{ needs.changes.outputs.head }}
         run: |
-          echo 'Commands: pnpm install --frozen-lockfile --ignore-scripts; pnpm format:check; pnpm test' >> "$GITHUB_STEP_SUMMARY"
+          echo "Comparison: $COMPARISON_BASE..$COMPARISON_HEAD" >> "$GITHUB_STEP_SUMMARY"
+          echo "Planned: format=$FORMAT_PLANNED; fixtures=$FIXTURES_PLANNED" >> "$GITHUB_STEP_SUMMARY"
+          echo 'Commands (when planned): pnpm install --frozen-lockfile --ignore-scripts; pnpm format:check; pnpm test' >> "$GITHUB_STEP_SUMMARY"
           echo "Result: $RESULT" >> "$GITHUB_STEP_SUMMARY"
           echo 'Runtime, account, native platform and release acceptance: not applicable; no projects are included.' >> "$GITHUB_STEP_SUMMARY"
   ci-result:
     if: always()
-    needs: [quality]
+    needs: [changes, quality]
     runs-on: ubuntu-latest
     steps:
       - name: Check validation results
         env:
+          QUALITY_PLANNED: ${{ needs.changes.outputs.quality }}
           NEEDS_RESULTS: ${{ toJSON(needs) }}
           VALIDATION_REVISION: ${{ github.sha }}
         shell: bash
@@ -91,7 +126,7 @@ jobs:
           set -euo pipefail
           echo "Validation revision: $VALIDATION_REVISION" >> "$GITHUB_STEP_SUMMARY"
           echo "$NEEDS_RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"' | tee -a "$GITHUB_STEP_SUMMARY"
-          if echo "$NEEDS_RESULTS" | jq -e 'all(.[]; .result == "success" or .result == "skipped")' > /dev/null; then
+          if echo "$NEEDS_RESULTS" | jq -e --arg planned "$QUALITY_PLANNED" 'all(.[]; .result == "success" or .result == "skipped") and .changes.result == "success" and (.quality.result == "success" or (.quality.result == "skipped" and $planned == "false"))' > /dev/null; then
             echo 'CI result: success' | tee -a "$GITHUB_STEP_SUMMARY"
           else
             echo 'CI result: failure' | tee -a "$GITHUB_STEP_SUMMARY"
