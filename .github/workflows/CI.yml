@@ -77,3 +77,23 @@ jobs:
           echo 'Commands: pnpm install --frozen-lockfile --ignore-scripts; pnpm format:check; pnpm test' >> "$GITHUB_STEP_SUMMARY"
           echo "Result: $RESULT" >> "$GITHUB_STEP_SUMMARY"
           echo 'Runtime, account, native platform and release acceptance: not applicable; no projects are included.' >> "$GITHUB_STEP_SUMMARY"
+  ci-result:
+    if: always()
+    needs: [quality]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check validation results
+        env:
+          NEEDS_RESULTS: ${{ toJSON(needs) }}
+          VALIDATION_REVISION: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Validation revision: $VALIDATION_REVISION" >> "$GITHUB_STEP_SUMMARY"
+          echo "$NEEDS_RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"' | tee -a "$GITHUB_STEP_SUMMARY"
+          if echo "$NEEDS_RESULTS" | jq -e 'all(.[]; .result == "success" or .result == "skipped")' > /dev/null; then
+            echo 'CI result: success' | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'CI result: failure' | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi

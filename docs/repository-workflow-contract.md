@@ -22,6 +22,8 @@ Run `pnpm test` for formatter and hook fixtures. CI runs these fixtures and `pnp
 
 Each CI run records the validation revision, comparison revisions, commands and results in its logs and job summary. Runtime and platform acceptance must be added with the owning project. Passing shared fixtures does not establish runtime or release acceptance.
 
+The `ci-result` job aggregates validation through `needs`, including the existing `quality` job. It runs with `always()` so dependency failures do not skip the aggregate check. Failed or cancelled dependencies fail `ci-result`; successful or skipped dependencies pass. Every new PR validation job must be included in `ci-result.needs`. The aggregate job runs on Ubuntu for the same PR, main-push and manual-dispatch events.
+
 ## Assets and licensing
 
 Every repository-owned `dist` directory is ignored generated output and must be removed after validation. Assets at least 512 KiB require exact-path Git LFS attributes and hydration before use. There are no LFS assets in this base.
