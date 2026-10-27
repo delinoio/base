@@ -8,6 +8,20 @@ The base repository contains shared instructions, skills, documentation template
 
 Use Node.js 24 from `.nvmrc` and pnpm 10.26.2 from `package.json`. Run `pnpm install --frozen-lockfile`. The prepare script installs Lefthook through `scripts/install-git-hooks.sh`. Archives without Git metadata skip hook installation. Linked worktrees may use their shared Git hooks directory; unrelated custom hook paths remain protected.
 
+## Task orchestration
+
+The pinned `turbo` dependency and root `turbo.json` orchestrate packages selected by `pnpm-workspace.yaml`: `apps/*`, `packages/*` and `servers/*`. The base has no runtime packages yet; commands only run tasks that exist in package scripts.
+
+Root `pnpm build`, `pnpm dev`, `pnpm lint` and `pnpm typecheck` delegate to `turbo run`. Root `pnpm test` runs workspace tests and the repository-wide `test:tooling` task. The latter runs the existing formatter and hook fixtures directly and is registered as `//#test:tooling`. It is uncached so each invocation checks the current Git and hook environment. `prepare`, `format` and `format:check` remain direct commands: hook installation has side effects, and formatting depends on Git revisions, staged changes and untracked files rather than package inputs.
+
+Root `pnpm dev` starts all workspace development servers together through the unfiltered `turbo run dev` command. Each workspace package that owns a development server exposes it through its `dev` script. Packages without a development server do not need a `dev` script. Package-specific development is available through an explicit filtered command; the root command always selects all packages. The base currently has no development servers to start.
+
+Define each workspace task in its owning `package.json`. Declare workspace dependencies so Turbo can order tasks: builds depend on dependency builds, tests depend on dependency builds, and lint and typecheck tasks depend on their corresponding dependency tasks. Build output defaults to `dist/**`; packages with other outputs must override them in a package-local `turbo.json` that extends `//`. Declare any additional test reports or incremental compiler outputs there. Development tasks are persistent and uncached.
+
+Turbo uses strict environment mode by default. Package contracts and package-local task configuration must declare environment variables, ignored configuration inputs and shared root inputs that affect results before enabling their caching. Keep side-effecting or environment-dependent tasks uncached when their inputs cannot be fully declared. Do not route Git-sensitive formatting through cached tasks or pass credentials through global environment wildcards. Remote caching is not configured. `.turbo/` is ignored local state; generated `dist` directories remain subject to the cleanup rule below.
+
+For a package subset, use `pnpm exec turbo run <task> --filter=<package>`. Use `pnpm exec turbo run <task> --dry=json` to inspect the graph without running tasks. Root-only fixture execution is also available as `pnpm test:tooling`. New runtime projects must add their own contracts and package scripts before these commands can establish runtime acceptance.
+
 ## Formatting
 
 Root `pnpm format` writes fixes and `pnpm format:check` checks without rewriting. Both use pinned Rstack and `rstack.config.ts`. Default local selection compares the merge base of `origin/main` and HEAD, including working changes and untracked files. Explicit `--base <sha> --head <sha>` arguments select that committed comparison. Local `--all` selects existing tracked files. Before the first commit, use `--staged`.
