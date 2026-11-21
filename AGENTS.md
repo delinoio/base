@@ -33,7 +33,7 @@
 - Commit your work as frequent as possible using git. Do NOT use `--no-verify` flag.
 - Run `git commit` only after `git add`; once files are staged, commit without unnecessary delay so staged changes are preserved in history.
 - Committing may require workspace binaries (for example, git hooks). If required binaries are missing, run `pnpm install` at the repository root and retry the commit.
-- CI changes must preserve affected manual validation and exclude macOS runners from PRs, main pushes and affected manual runs. Follow `docs/repository-workflow-contract.md`.
+- CI changes must preserve affected manual validation. Follow `docs/repository-workflow-contract.md`.
 - Keep `.infisical.json`, `.dev-environment/`, real `.env` files, user credentials, and production/release/signing credentials uncommitted. Service-local `.env.example` files contain names, validation guidance, placeholders, and safe loopback defaults only; do not add a root environment example or expose internal secret paths in public product docs.
 - After addressing pull request review comments and pushing updates, mark the corresponding review threads as resolved.
 - When no explicit scope is specified and you are currently working within a pull request scope, interpret instructions within the current pull request scope.
